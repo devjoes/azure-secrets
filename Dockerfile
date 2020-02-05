@@ -15,12 +15,11 @@ RUN apk add git gcc g++ \
     && pip --no-cache-dir install azure-cli==2.0.81
 
 COPY plugin /src/plugin
-COPY go.mod /src/go.mod
-WORKDIR /src/
+WORKDIR /src/plugin/devjoes/v1/azuresecretsgenerator
 
-RUN go build -buildmode plugin -o /root/.config/kustomize/plugin/devjoes/v1/azuresecretsgenerator/AzureSecretsGenerator.so ./plugin/devjoes/v1/azuresecretsgenerator/AzureSecretsGenerator.go \
+RUN go build -buildmode plugin -o /root/.config/kustomize/plugin/devjoes/v1/azuresecretsgenerator/AzureSecretsGenerator.so AzureSecretsGenerator.go \
 && chmod +x /root/.config/kustomize/plugin/devjoes/v1/azuresecretsgenerator/AzureSecretsGenerator.so \
-&& go test plugin/devjoes/v1/azuresecretsgenerator/AzureSecretsGenerator_test.go
+&& go test AzureSecretsGenerator_test.go
 
 COPY example /src/example
 WORKDIR /src/example
@@ -31,8 +30,8 @@ ARG AZURE_CLIENT_SECRET
 
 RUN sh test.sh
 
-# FROM alpine AS final
-# COPY --from=build /root/.config /root/.config
-# COPY --from=build /go/bin/kustomize /bin/kustomize
+FROM alpine AS final
+COPY --from=build /root/.config /root/.config
+COPY --from=build /go/bin/kustomize /bin/kustomize
 
 CMD ["sh"]
