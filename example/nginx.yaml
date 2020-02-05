@@ -1,0 +1,44 @@
+apiVersion: apps/v1beta1
+kind: Deployment
+metadata:
+  name: nginx
+  namespace: test-ns
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: nginx
+  template:
+    spec:
+      containers:
+        -
+          image: nginx:latest
+          env:
+            - name: test_TestSecret1
+              valueFrom:
+                secretKeyRef:
+                  name: test
+                  key: TestSecret1
+            - name: test_TestSecret2
+              valueFrom:
+                secretKeyRef:
+                  name: test
+                  key: FOO2
+            - name: default-name_FOO2
+              valueFrom:
+                secretKeyRef:
+                  name: default-name
+                  key: TestSecret1
+            - name: default-name_BAR2
+              valueFrom:
+                secretKeyRef:
+                  name: default-name
+                  key: BAR2
+                
+          ports:
+            - containerPort: 80
+              protocol: TCP
+          lifecycle:
+            postStart:
+              exec:
+                command: ["/bin/sh", "-c", "printenv > /usr/share/nginx/html/index.html"]
