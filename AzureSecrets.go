@@ -165,9 +165,7 @@ func getKvClient(vaultName string) (iKvClient, error) {
 	}
 
 	if os.Getenv(azureTenantID) == "" || os.Getenv(azureClientID) == "" || os.Getenv(azureClientSecret) == "" || os.Getenv(disableAzureAuthValidation) != "" {
-		msg := fmt.Sprintf("The environment variables: %s, %s, %s should be set. Or set %s.", azureTenantID, azureTenantID, azureTenantID, disableAzureAuthValidation)
-		fmt.Println(msg)
-		return nil, errors.New(msg)
+		return nil, errors.New(fmt.Sprintf("The environment variables: %s, %s, %s should be set. Or set %s.", azureTenantID, azureTenantID, azureTenantID, disableAzureAuthValidation))
 	}
 
 	authorizer, err := kvauth.NewAuthorizerFromEnvironment()
