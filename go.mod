@@ -1,4 +1,4 @@
-module github.com/devjoes/azure-secrets/plugin/devjoes/v1/azuresecretsgenerator
+module github.com/devjoes/azure-secrets
 
 go 1.12
 

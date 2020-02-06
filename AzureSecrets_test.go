@@ -15,11 +15,11 @@ var barSecret string = base64.StdEncoding.EncodeToString([]byte("Secret value fo
 func TestAzureSecrets(t *testing.T) {
 
 	th := kusttest_test.MakeEnhancedHarness(t).
-		BuildGoPlugin("devjoes", "v1", "AzureSecretsGenerator")
+		BuildGoPlugin("devjoes", "v1", "AzureSecrets")
 
 	result := th.LoadAndRunGenerator(
 		`apiVersion: devjoes/v1
-kind: AzureSecretsGenerator
+kind: AzureSecrets
 metadata:
   name: default-name
   namespace: default-ns
@@ -72,10 +72,10 @@ type: Opaque
 
 func TestAzureSecrets_QueryVaultOncePerSecret(t *testing.T) {
 	th := kusttest_test.MakeEnhancedHarness(t).
-		BuildGoPlugin("devjoes", "v1", "AzureSecretsGenerator")
+		BuildGoPlugin("devjoes", "v1", "AzureSecrets")
 	result := th.LoadAndRunGenerator(
 		`apiVersion: devjoes/v1
-kind: AzureSecretsGenerator
+kind: AzureSecrets
 metadata:
   name: default-name
   namespace: default-ns
@@ -104,11 +104,11 @@ secrets:
 func TestAzureSecrets_RunInParallel(t *testing.T) {
 	// The test implementation takes ~1000ms to get a secret
 	th := kusttest_test.MakeEnhancedHarness(t).
-		BuildGoPlugin("devjoes", "v1", "AzureSecretsGenerator")
+		BuildGoPlugin("devjoes", "v1", "AzureSecrets")
 	start := time.Now()
 	th.LoadAndRunGenerator(
     `apiVersion: devjoes/v1
-kind: AzureSecretsGenerator
+kind: AzureSecrets
 metadata:
   name: default-name
   namespace: default-ns
@@ -122,7 +122,7 @@ secrets:
 	start = time.Now()
 	th.LoadAndRunGenerator(
     `apiVersion: devjoes/v1
-kind: AzureSecretsGenerator
+kind: AzureSecrets
 metadata:
   name: default-name
 vault: __TESTING_AZURESECRETS__

@@ -6,7 +6,7 @@ ENV GO111MODULE=on \
     CGO_ENABLED=1
 
 RUN apk add git gcc g++ \
-    && mkdir -p /root/.config/kustomize/plugin/devjoes/v1/azuresecretsgenerator/ \
+    && mkdir -p /root/.config/kustomize/plugin/devjoes/v1/azuresecrets/ \
     && go get sigs.k8s.io/kustomize/kustomize/v3@v3.5.4 \
     && apk add --no-cache curl tar openssl sudo bash jq \
     && apk --update --no-cache add postgresql-client postgresql \
@@ -15,11 +15,11 @@ RUN apk add git gcc g++ \
     && pip --no-cache-dir install azure-cli==2.0.81
 
 COPY plugin /src/plugin
-WORKDIR /src/plugin/devjoes/v1/azuresecretsgenerator
+WORKDIR /src/plugin/devjoes/v1/azuresecrets
 
-RUN go build -buildmode plugin -o /root/.config/kustomize/plugin/devjoes/v1/azuresecretsgenerator/AzureSecretsGenerator.so AzureSecretsGenerator.go \
-&& chmod +x /root/.config/kustomize/plugin/devjoes/v1/azuresecretsgenerator/AzureSecretsGenerator.so \
-&& go test AzureSecretsGenerator_test.go
+RUN go build -buildmode plugin -o /root/.config/kustomize/plugin/devjoes/v1/azuresecrets/AzureSecrets.so AzureSecrets.go \
+&& chmod +x /root/.config/kustomize/plugin/devjoes/v1/azuresecrets/AzureSecrets.so \
+&& go test AzureSecrets_test.go
 
 COPY example /src/example
 WORKDIR /src/example

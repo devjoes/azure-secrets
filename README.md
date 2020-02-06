@@ -19,7 +19,7 @@ You can declare the plugin like this:
     apiVersion: devjoes/v1
     kind: AzureSecrets
     metadata:
-      name: azuresecretsgenerator
+      name: azuresecrets
     vault: **name of the azure keyvault**
     secrets:
     - name: secret1
