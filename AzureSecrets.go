@@ -192,7 +192,7 @@ type azKvClient struct {
 func (kvc azKvClient) getSecret(name string) (*string, error) {
 	res, err := kvc.client.GetSecret(context.Background(), "https://"+kvc.vaultName+".vault.azure.net", name, "")
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrapf(err, "Error getting secret '%s' from vault '%s'", name, kvc.vaultName)
 	}
 	return res.Value, nil
 }
