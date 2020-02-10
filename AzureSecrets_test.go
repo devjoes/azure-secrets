@@ -13,7 +13,6 @@ var fooSecret string = base64.StdEncoding.EncodeToString([]byte("Secret value fo
 var barSecret string = base64.StdEncoding.EncodeToString([]byte("Secret value for BAR"))
 
 func TestAzureSecrets(t *testing.T) {
-
 	th := kusttest_test.MakeEnhancedHarness(t).
 		BuildGoPlugin("devjoes", "v1", "AzureSecrets")
 
@@ -65,6 +64,36 @@ data:
 kind: Secret
 metadata:
   name: default-name
+  namespace: test-ns
+type: Opaque
+`)
+}
+
+func TestAzureSecrets_Base64Decodes(t *testing.T) {
+	th := kusttest_test.MakeEnhancedHarness(t).
+		BuildGoPlugin("devjoes", "v1", "AzureSecrets")
+
+	result := th.LoadAndRunGenerator(
+		`apiVersion: devjoes/v1
+kind: AzureSecrets
+metadata:
+  name: default-name
+  namespace: default-ns
+vault: __TESTING_AZURESECRETS__
+secrets:
+- name: test-secret
+  namespace: test-ns
+  base64decode: true
+  keys:
+  - FOOKey=B64FOO
+  - BARKey=B64BAR`)
+	th.AssertActualEqualsExpected(result, `apiVersion: v1
+data:
+  BARKey: `+barSecret+`
+  FOOKey: `+fooSecret+`
+kind: Secret
+metadata:
+  name: test-secret
   namespace: test-ns
 type: Opaque
 `)

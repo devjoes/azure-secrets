@@ -2,14 +2,16 @@ package main
 
 import (
 	"context"
+	"encoding/base64"
 	"fmt"
-	"github.com/Azure/azure-sdk-for-go/profiles/latest/keyvault/keyvault"
-	kvauth "github.com/Azure/azure-sdk-for-go/services/keyvault/auth"
 	"math/rand"
 	"os"
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/Azure/azure-sdk-for-go/profiles/latest/keyvault/keyvault"
+	kvauth "github.com/Azure/azure-sdk-for-go/services/keyvault/auth"
 
 	"github.com/pkg/errors"
 	"sigs.k8s.io/kustomize/api/ifc"
@@ -25,9 +27,10 @@ const azureClientSecret = "AZURE_CLIENT_SECRET"
 const disableAzureAuthValidation = "DISABLE_AZURE_AUTH_VALIDATION"
 
 type innerSecret struct {
-	Name      string   `json:"name,omitempty" yaml:"name,omitempty"`
-	Namespace string   `json:"namespace,omitempty" yaml:"namespace,omitempty"`
-	Keys      []string `json:"keys,omitempty" yaml:"keys,omitempty"`
+	Name         string   `json:"name,omitempty" yaml:"name,omitempty"`
+	Namespace    string   `json:"namespace,omitempty" yaml:"namespace,omitempty"`
+	Keys         []string `json:"keys,omitempty" yaml:"keys,omitempty"`
+	Base64Decode bool     `json:"base64decode,omitempty" yaml:"base64decode,omitempty"`
 }
 
 type plugin struct {
@@ -65,6 +68,7 @@ func (p *plugin) Generate() (resmap.ResMap, error) {
 
 	secretValues, err := p.getSecretValues(&kvClient)
 	if err != nil {
+		fmt.Println(err)
 		return nil, err
 	}
 
@@ -79,6 +83,13 @@ func (p *plugin) Generate() (resmap.ResMap, error) {
 }
 
 func getSecret(valuesChan chan secretValue, name string, kvClient *iKvClient) {
+	//fmt.Printf("Getting secret '%s' in vault %v", name, *kvClient)
+	defer func() {
+		if err := recover(); err != nil {
+			fmt.Println(err)
+			valuesChan <- secretValue{name, "", errors.Errorf("%v", err)}
+		}
+	}()
 	sec, err := (*kvClient).getSecret(name)
 	if err != nil {
 		valuesChan <- secretValue{name, "", err}
@@ -149,6 +160,13 @@ func (p *plugin) generateSecret(secret innerSecret, values map[string]string) (r
 		kv := strings.Split(key, "=")
 		if len(kv) == 2 {
 			if v, ok := values[kv[1]]; ok {
+				if secret.Base64Decode {
+					data, err := base64.StdEncoding.DecodeString(v)
+					if (err != nil){
+						return nil, errors.Wrapf(err,"Could not base64 decode '%s'", v)
+					}
+					v = string(data)
+				}
 				args.LiteralSources = append(
 					args.LiteralSources, kv[0]+"="+v)
 			}
@@ -205,6 +223,8 @@ func (kvc testClient) getSecret(name string) (*string, error) {
 	var val string
 	if name == "RND" {
 		val = fmt.Sprintf("%d", rand.Int63())
+	} else if strings.HasPrefix(name, "B64") {
+		val = base64.StdEncoding.EncodeToString([]byte(fmt.Sprintf("Secret value for %s", name[3:])))
 	} else {
 		val = fmt.Sprintf("Secret value for %s", name)
 	}
