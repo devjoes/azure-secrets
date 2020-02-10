@@ -212,7 +212,13 @@ func (kvc azKvClient) getSecret(name string) (*string, error) {
 	if err != nil {
 		return nil, errors.Wrapf(err, "Error getting secret '%s' from vault '%s'", name, kvc.vaultName)
 	}
-	return res.Value, nil
+	defer func() {
+		if recoveredErr := recover(); err != nil {
+			err = errors.Errorf("Error getting secret '%s' from vault '%s' %v", name, kvc.vaultName, recoveredErr)
+			fmt.Println(err)
+		}
+	}()
+	return res.Value, err
 }
 
 // Kustomize plugins don't seem to support DI'ing mocks :(
