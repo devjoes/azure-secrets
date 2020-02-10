@@ -37,3 +37,17 @@ This will result in two secrets being generated in the test-ns namespace.
 * secret2 will contain the key baz which will have the value of the keyvault secret 'name_of_baz_secret_in_vault'
 
 If the name or namespace of a secret is unset then it will default to the name/namespace of the parent AzureSecrets. See the Dockerfile for more examples.
+
+## Installation
+
+This has been tested with Kustomize 3.5.4 (see docker file)
+
+    go get -d github.com/devjoes/azure-secrets/
+    mkdir -p ~/.config/kustomize/plugin/devjoes/v1/azuresecrets/
+    go build -buildmode plugin -o ~/.config/kustomize/plugin/devjoes/v1/azuresecrets/AzureSecrets.so ./AzureSecrets.go
+
+There is a Docker image [here](https://hub.docker.com/r/joeshearn/azure-secrets). You can either run this as it is, use it as a base image or copy the relevant files out of it like this:
+
+    FROM alpine:latest
+    COPY --from=joeshearn/azure-secrets /bin/kustomize /bin/kustomize
+    COPY --from=joeshearn/azure-secrets /root/.config/kustomize/plugin/devjoes/v1/azuresecrets/AzureSecrets.so /root/.config/kustomize/plugin/devjoes/v1/azuresecrets/AzureSecrets.so
