@@ -29,12 +29,13 @@ You can declare the plugin like this:
       - bar=name_of_bar_secret_in_vault
     - name: secret2
       namespace: test-ns
+      base64decode: true
       keys:
       - baz=name_of_baz_secret_in_vault
 
 This will result in two secrets being generated in the test-ns namespace. 
 * secret1 will contain the keys foo and bar, assigned to these will be the values of the keyvault secrets 'name_of_foo_secret_in_vault' and 'name_of_bar_secret_in_vault'.
-* secret2 will contain the key baz which will have the value of the keyvault secret 'name_of_baz_secret_in_vault'
+* secret2 will contain the key baz which will have the base64 decoded value of the keyvault secret 'name_of_baz_secret_in_vault'
 
 If the name or namespace of a secret is unset then it will default to the name/namespace of the parent AzureSecrets. See the Dockerfile for more examples.
 
