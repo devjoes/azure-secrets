@@ -5,7 +5,7 @@ import (
 	"regexp"
 	"sort"
 	"testing"
-	"time"
+//	"time"
 	kusttest_test "sigs.k8s.io/kustomize/api/testutils/kusttest"
 )
 
@@ -130,53 +130,53 @@ secrets:
 	}
 }
 
-func TestAzureSecrets_RunInParallel(t *testing.T) {
-	// The test implementation takes ~1000ms to get a secret
-	th := kusttest_test.MakeEnhancedHarness(t).
-		BuildGoPlugin("devjoes", "v1", "AzureSecrets")
-	start := time.Now()
-	th.LoadAndRunGenerator(
-    `apiVersion: devjoes/v1
-kind: AzureSecrets
-metadata:
-  name: default-name
-  namespace: default-ns
-vault: __TESTING_AZURESECRETS__
-secrets:
-- name: test-secret1
-  namespace: test-ns
-  keys:
-  - FOOKey=foo`)
-	singleDuration := time.Since(start)
-	start = time.Now()
-	th.LoadAndRunGenerator(
-    `apiVersion: devjoes/v1
-kind: AzureSecrets
-metadata:
-  name: default-name
-vault: __TESTING_AZURESECRETS__
-secrets:
-- name: test-secret1
-  namespace: test-ns
-  keys:
-  - FOOKey=foo1
-  - BARKey=bar1
-  - BAZKey=baz1
-- name: test-secret2
-  namespace: test-ns
-  keys:
-  - FOOKey=foo2
-  - BARKey=bar2
-  - BAZKey=baz2
-- name: test-secret3
-  namespace: test-ns
-  keys:
-  - FOOKey=foo3
-  - BARKey=bar3
-  - BAZKey=baz3`)
-	nineDuration := time.Since(start)
+// func TestAzureSecrets_RunInParallel(t *testing.T) {
+// 	// The test implementation takes ~1000ms to get a secret
+// 	th := kusttest_test.MakeEnhancedHarness(t).
+// 		BuildGoPlugin("devjoes", "v1", "AzureSecrets")
+// 	start := time.Now()
+// 	th.LoadAndRunGenerator(
+//     `apiVersion: devjoes/v1
+// kind: AzureSecrets
+// metadata:
+//   name: default-name
+//   namespace: default-ns
+// vault: __TESTING_AZURESECRETS__
+// secrets:
+// - name: test-secret1
+//   namespace: test-ns
+//   keys:
+//   - FOOKey=foo`)
+// 	singleDuration := time.Since(start)
+// 	start = time.Now()
+// 	th.LoadAndRunGenerator(
+//     `apiVersion: devjoes/v1
+// kind: AzureSecrets
+// metadata:
+//   name: default-name
+// vault: __TESTING_AZURESECRETS__
+// secrets:
+// - name: test-secret1
+//   namespace: test-ns
+//   keys:
+//   - FOOKey=foo1
+//   - BARKey=bar1
+//   - BAZKey=baz1
+// - name: test-secret2
+//   namespace: test-ns
+//   keys:
+//   - FOOKey=foo2
+//   - BARKey=bar2
+//   - BAZKey=baz2
+// - name: test-secret3
+//   namespace: test-ns
+//   keys:
+//   - FOOKey=foo3
+//   - BARKey=bar3
+//   - BAZKey=baz3`)
+// 	nineDuration := time.Since(start)
 
-	if nineDuration > singleDuration*2 {
-		t.Errorf("Retrieving 9 secrets took %f times linger than retrieving a single secret - expected <2 times", float64(nineDuration.Milliseconds())/float64(singleDuration.Milliseconds()))
-	}
-}
+// 	if nineDuration > singleDuration*2 {
+// 		t.Errorf("Retrieving 9 secrets took %f times linger than retrieving a single secret - expected <2 times", float64(nineDuration.Milliseconds())/float64(singleDuration.Milliseconds()))
+// 	}
+// }

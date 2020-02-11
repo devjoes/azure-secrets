@@ -38,6 +38,8 @@ type plugin struct {
 	types.ObjectMeta `json:"metadata,omitempty" yaml:"metadata,omitempty" protobuf:"bytes,1,opt,name=metadata"`
 	Vault            string        `json:"vault,omitempty" yaml:"vault,omitempty"`
 	Secrets          []innerSecret `json:"secrets,omitempty" yaml:"secrets,omitempty"`
+	Verbose          bool          `json:"verbose,omitempty" yaml:"verbose,omitempty"`
+	async            bool          // This doesn't work
 	factory          *resmap.Factory
 	loader           ifc.KvLoader
 }
@@ -51,66 +53,103 @@ type secretValue struct {
 var KustomizePlugin plugin
 
 func (p *plugin) Config(ph *resmap.PluginHelpers, c []byte) (err error) {
+	p.debug("Azure Secrets - config start")
 	p.Namespace = "default"
 	p.pluginHelper = ph
 	p.factory = ph.ResmapFactory()
 	p.loader = kv.NewLoader(p.pluginHelper.Loader(), p.pluginHelper.Validator())
 	err = yaml.Unmarshal(c, p)
+	p.debug("Azure Secrets - config end")
 	return err
 }
 
 func (p *plugin) Generate() (resmap.ResMap, error) {
+	p.debug("Azure Secrets - generate start")
 	resmap := resmap.New()
-	kvClient, err := getKvClient(p.Vault)
+	_, err := getKvClient(p.Vault)
 	if err != nil {
+		p.debug("Azure Secrets - generate error")
 		return nil, err
 	}
 
-	secretValues, err := p.getSecretValues(&kvClient)
+	var secretValues map[string]string
+	if p.async {
+		secretValues, err = p.getSecretValuesAsync()
+	} else {
+		secretValues, err = p.getSecretValues()
+	}
 	if err != nil {
-		fmt.Println(err)
+		p.debug("Azure Secrets - generate error %v", err)
 		return nil, err
 	}
 
 	for _, sec := range p.Secrets {
 		innerRmap, err := p.generateSecret(sec, secretValues)
 		if err != nil {
+			p.debug("Azure Secrets - generate error")
 			return nil, errors.Wrapf(err, "Error generating %v", sec)
 		}
 		resmap.AppendAll(innerRmap)
 	}
+	p.debug("Azure Secrets - generate end")
 	return resmap, nil
 }
 
-func getSecret(valuesChan chan secretValue, name string, kvClient *iKvClient) {
-	//fmt.Printf("Getting secret '%s' in vault %v", name, *kvClient)
+func getSecret(valuesChan chan secretValue, name string, vaultName string) {
+	fmt.Printf("Getting secret '%s' in vault %v\n", name, vaultName)
+	kvClient, err := getKvClient(vaultName)
 	defer func() {
 		if err := recover(); err != nil {
 			fmt.Println(err)
 			valuesChan <- secretValue{name, "", errors.Errorf("%v", err)}
 		}
 	}()
-	sec, err := (*kvClient).getSecret(name)
+	sec, err := kvClient.getSecret(name)
 	if err != nil {
 		valuesChan <- secretValue{name, "", err}
 	}
 	valuesChan <- secretValue{name, *sec, nil}
 }
 
-func (p *plugin) getSecretValues(kvClient *iKvClient) (map[string]string, error) {
+func (p *plugin) getSecretValues() (map[string]string, error) {
+	kvClient, err := getKvClient(p.Vault)
+	if err != nil {
+		p.debug("Error getting client %v", err)
+		return nil, errors.Wrapf(err, "Error getting client")
+	}
+	secNames := p.getUniqueSecretNames()
+	values := make(map[string]string)
+
+	for _, n := range secNames {
+		p.debug("Getting value for %s", n)
+		sec, err := kvClient.getSecret(n)
+		if err != nil {
+			p.debug("Error getting secret %s %v", n, err)
+			return nil, err
+		}
+		values[n] = *sec
+	}
+	return values, nil
+}
+
+func (p *plugin) getSecretValuesAsync() (map[string]string, error) {
+	p.debug("Get Secret Values Start")
 	values := make(map[string]string)
 	valuesChan := make(chan secretValue)
 	secNames := p.getUniqueSecretNames()
 
 	for _, n := range secNames {
-		go getSecret(valuesChan, n, kvClient)
+		p.debug("Getting value for %s", n)
+		go getSecret(valuesChan, n, p.Vault)
 	}
 	for range secNames {
 		val := <-valuesChan
 		if val.err != nil {
+			p.debug("Error from channel %v", val.err)
 			close(valuesChan)
 			return nil, errors.Wrapf(val.err, "Error getting secret %s", val.name)
 		}
+		p.debug("Got %s for %s", val.name, val.value)
 		values[val.name] = val.value
 	}
 	return values, nil
@@ -162,8 +201,8 @@ func (p *plugin) generateSecret(secret innerSecret, values map[string]string) (r
 			if v, ok := values[kv[1]]; ok {
 				if secret.Base64Decode {
 					data, err := base64.StdEncoding.DecodeString(v)
-					if (err != nil){
-						return nil, errors.Wrapf(err,"Could not base64 decode '%s'", v)
+					if err != nil {
+						return nil, errors.Wrapf(err, "Could not base64 decode '%s'", v)
 					}
 					v = string(data)
 				}
@@ -174,6 +213,12 @@ func (p *plugin) generateSecret(secret innerSecret, values map[string]string) (r
 	}
 
 	return p.factory.FromSecretArgs(p.loader, nil, args)
+}
+
+func (p *plugin) debug(format string, a ...interface{}) {
+	if p.Verbose {
+		fmt.Printf("Azure Secrets - "+format+"\n", a)
+	}
 }
 
 func getKvClient(vaultName string) (iKvClient, error) {
