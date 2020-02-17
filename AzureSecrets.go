@@ -3,16 +3,21 @@ package main
 import (
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"math/rand"
 	"os"
+	"os/exec"
 	"sort"
 	"strings"
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/profiles/latest/keyvault/keyvault"
-	kvauth "github.com/Azure/azure-sdk-for-go/services/keyvault/auth"
+	"github.com/Azure/go-autorest/autorest"
+	"github.com/Azure/go-autorest/autorest/adal"
+	"github.com/Azure/go-autorest/autorest/azure"
 
+	kvauth "github.com/Azure/azure-sdk-for-go/services/keyvault/auth"
 	"github.com/pkg/errors"
 	"sigs.k8s.io/kustomize/api/ifc"
 	"sigs.k8s.io/kustomize/api/kv"
@@ -39,6 +44,7 @@ type plugin struct {
 	Vault            string        `json:"vault,omitempty" yaml:"vault,omitempty"`
 	Secrets          []innerSecret `json:"secrets,omitempty" yaml:"secrets,omitempty"`
 	Verbose          bool          `json:"verbose,omitempty" yaml:"verbose,omitempty"`
+	Exec             bool          `json:"exec,omitempty" yaml:"exec,omitempty"`
 	async            bool          // This doesn't work
 	factory          *resmap.Factory
 	loader           ifc.KvLoader
@@ -66,7 +72,7 @@ func (p *plugin) Config(ph *resmap.PluginHelpers, c []byte) (err error) {
 func (p *plugin) Generate() (resmap.ResMap, error) {
 	p.debug("Azure Secrets - generate start")
 	resmap := resmap.New()
-	_, err := getKvClient(p.Vault)
+	_, err := getKvClient(p.Vault, p.Verbose, p.Exec)
 	if err != nil {
 		p.debug("Azure Secrets - generate error")
 		return nil, err
@@ -95,9 +101,9 @@ func (p *plugin) Generate() (resmap.ResMap, error) {
 	return resmap, nil
 }
 
-func getSecret(valuesChan chan secretValue, name string, vaultName string) {
+func getSecret(valuesChan chan secretValue, name string, vaultName string, verbose bool, azExec bool) {
 	fmt.Printf("Getting secret '%s' in vault %v\n", name, vaultName)
-	kvClient, err := getKvClient(vaultName)
+	kvClient, err := getKvClient(vaultName, verbose, azExec)
 	defer func() {
 		if err := recover(); err != nil {
 			fmt.Println(err)
@@ -112,7 +118,7 @@ func getSecret(valuesChan chan secretValue, name string, vaultName string) {
 }
 
 func (p *plugin) getSecretValues() (map[string]string, error) {
-	kvClient, err := getKvClient(p.Vault)
+	kvClient, err := getKvClient(p.Vault, p.Verbose, p.Exec)
 	if err != nil {
 		p.debug("Error getting client %v", err)
 		return nil, errors.Wrapf(err, "Error getting client")
@@ -140,7 +146,7 @@ func (p *plugin) getSecretValuesAsync() (map[string]string, error) {
 
 	for _, n := range secNames {
 		p.debug("Getting value for %s", n)
-		go getSecret(valuesChan, n, p.Vault)
+		go getSecret(valuesChan, n, p.Vault, p.Verbose, p.Exec)
 	}
 	for range secNames {
 		val := <-valuesChan
@@ -221,7 +227,7 @@ func (p *plugin) debug(format string, a ...interface{}) {
 	}
 }
 
-func getKvClient(vaultName string) (iKvClient, error) {
+func getKvClient(vaultName string, verbose bool, execAz bool) (iKvClient, error) {
 	// Kustomize plugins don't seem to support DI'ing mocks :(
 	if vaultName == "__TESTING_AZURESECRETS__" {
 		return testClient{}, nil
@@ -231,16 +237,80 @@ func getKvClient(vaultName string) (iKvClient, error) {
 		return nil, errors.New(fmt.Sprintf("The environment variables: %s, %s, %s should be set. Or set %s.", azureTenantID, azureTenantID, azureTenantID, disableAzureAuthValidation))
 	}
 
-	authorizer, err := kvauth.NewAuthorizerFromEnvironment()
-	if err != nil {
-		return nil, errors.Wrap(err, "unable to create vault authorizer")
+	tenantID := os.Getenv(azureTenantID)
+	clientID := os.Getenv(azureClientID)
+	clientSecret := os.Getenv(azureClientSecret)
+	fmt.Println(execAz)
+	if execAz {
+		return azExecKvClient{vaultName: vaultName, clientID: clientID, clientSecret: clientSecret, tenantID: tenantID}, nil
 	}
 
 	basicClient := keyvault.New()
+	authorizer, err := kvauth.NewAuthorizerFromEnvironment()
+	if err != nil {
+		fmt.Printf("unable to create vault authorizer: %v\n", err)
+		return nil, err
+	}
+
 	basicClient.Authorizer = authorizer
-	client := azKvClient{&basicClient, vaultName}
+	//setupAuthorizer(basicClient, "public", clientID, clientSecret)
+
+	client := azKvClient{basicClient, vaultName}
 
 	return client, nil
+}
+
+func setupAuthorizer(client keyvault.BaseClient, environment string, clientID string, clientSecret string) {
+	client.Authorizer = autorest.NewBearerAuthorizerCallback(client.Sender, func(tenantID, resource string) (*autorest.BearerAuthorizer, error) {
+		env, err := getAzureEnvironment(environment)
+		fmt.Println(env.ActiveDirectoryEndpoint)
+		if err != nil {
+			fmt.Println(err.Error())
+			return nil, err
+		}
+
+		keyVaultOauthConfig, err := getAzureOAuthConfig(env.ActiveDirectoryEndpoint, tenantID)
+		if err != nil {
+			fmt.Println(err.Error())
+			return nil, err
+		}
+
+		keyVaultSpt, err := adal.NewServicePrincipalToken(*keyVaultOauthConfig, clientID, clientSecret, resource)
+		if err != nil {
+			fmt.Println(err.Error())
+			return nil, err
+		}
+
+		return autorest.NewBearerAuthorizer(keyVaultSpt), nil
+	})
+}
+
+func getAzureEnvironment(environment string) (*azure.Environment, error) {
+	env, envErr := azure.EnvironmentFromName(environment)
+
+	if envErr != nil {
+		wrapped := fmt.Sprintf("AZURE%sCLOUD", environment)
+		var innerErr error
+		if env, innerErr = azure.EnvironmentFromName(wrapped); innerErr != nil {
+			return nil, envErr
+		}
+	}
+
+	return &env, nil
+}
+
+func getAzureOAuthConfig(endpoint, tenantID string) (*adal.OAuthConfig, error) {
+	oauthConfig, err := adal.NewOAuthConfig(endpoint, tenantID)
+	if err != nil {
+		return nil, err
+	}
+
+	// OAuthConfigForTenant returns a pointer, which can be nil.
+	if oauthConfig == nil {
+		return nil, fmt.Errorf("Unable to configure OAuthConfig for tenant %s", tenantID)
+	}
+
+	return oauthConfig, nil
 }
 
 type iKvClient interface {
@@ -248,11 +318,13 @@ type iKvClient interface {
 }
 
 type azKvClient struct {
-	client    *keyvault.BaseClient
+	client    keyvault.BaseClient
 	vaultName string
 }
 
 func (kvc azKvClient) getSecret(name string) (*string, error) {
+	_, _ = kvc.client.GetSecret(context.Background(), "https://"+kvc.vaultName+".vault.azure.net", name, "")
+	_, _ = kvc.client.GetSecret(context.Background(), "https://"+kvc.vaultName+".vault.azure.net", name, "")
 	res, err := kvc.client.GetSecret(context.Background(), "https://"+kvc.vaultName+".vault.azure.net", name, "")
 	if err != nil {
 		return nil, errors.Wrapf(err, "Error getting secret '%s' from vault '%s'", name, kvc.vaultName)
@@ -264,6 +336,37 @@ func (kvc azKvClient) getSecret(name string) (*string, error) {
 		}
 	}()
 	return res.Value, err
+}
+
+type azExecKvClient struct {
+	tenantID     string
+	clientID     string
+	clientSecret string
+	vaultName    string
+}
+
+func (kvc azExecKvClient) getSecret(name string) (*string, error) {
+	login := exec.Command("az", "login", "--service-principal", "--username", kvc.clientID, "--password", kvc.clientSecret, "--tenant", kvc.tenantID)
+
+	if err := login.Start(); err != nil {
+		fmt.Printf("az login error: %s\n", err.Error())
+		return nil, err
+	}
+
+	jsonSecret, err := exec.Command("az", "keyvault", "secret", "show", "--name", name, "--vault-name", kvc.vaultName).Output()
+	fmt.Printf("JSON: %s\n", string(jsonSecret))
+	var s SecretType
+	err = json.Unmarshal(jsonSecret, &s)
+	if err != nil {
+		fmt.Printf("az keyvault error: %s\n", err.Error())
+		return nil, err
+	}
+	sVal := s.Value
+	return &sVal, nil
+}
+
+type SecretType struct {
+	Value string
 }
 
 // Kustomize plugins don't seem to support DI'ing mocks :(

@@ -13,7 +13,8 @@ KEYVAULT="kustazsecrets-$NOW"
 echo "Keyvault is $KEYVAULT in rg-$KEYVAULT"
 
 cleanup() {
-    echo "Deleting rg-$KEYVAULT"
+  echo "Deleting rg-$KEYVAULT"
+  az login --service-principal -u "$AZURE_CLIENT_ID" -p "$AZURE_CLIENT_SECRET" --tenant "$AZURE_TENANT_ID"
   az group delete --name "rg-$KEYVAULT" --yes
   rm -Rf ~/.azure
 }
@@ -28,4 +29,8 @@ az keyvault secret set --vault-name "$KEYVAULT" --name "test-secret2" --value "S
 sed -i "s/TestKeyVault/$KEYVAULT/g" azure_secrets.yaml
 cat azure_secrets.yaml
 
+echo "===================== Attempting with SDK  ==================================="
 kustomize build . --enable_alpha_plugins || exit 1
+
+# Should still be logged in
+az account show || exit 1

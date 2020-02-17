@@ -1,4 +1,5 @@
 generators:
 - azure_secrets.yaml
+- azure_secrets_exec.yaml
 resources:
 - nginx.yaml
