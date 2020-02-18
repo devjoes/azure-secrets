@@ -6,8 +6,7 @@ ENV GO111MODULE=on \
     GOARCH=amd64 \
     CGO_ENABLED=1
 
-RUN apk add git gcc g++ \
-    && mkdir -p /root/.config/kustomize/plugin/devjoes/v1/azuresecrets/ \
+RUN mkdir -p /root/.config/kustomize/plugin/devjoes/v1/azuresecrets/ \
     && apk add --no-cache curl tar openssl sudo bash jq \
     && apk --update --no-cache add postgresql-client postgresql \
     && apk add py-pip \
@@ -26,12 +25,17 @@ FROM build AS test
 ARG AZURE_TENANT_ID 
 ARG AZURE_CLIENT_ID 
 ARG AZURE_CLIENT_SECRET
+ARG RUN_INTEGRATION_TESTS=0
+
+ENV AZURE_TENANT_ID  $AZURE_TENANT_ID 
+ENV AZURE_CLIENT_ID  $AZURE_CLIENT_ID 
+ENV AZURE_CLIENT_SECRET $AZURE_CLIENT_SECRET
+ENV RUN_INTEGRATION_TESTS $RUN_INTEGRATION_TESTS
 
 COPY example /src/example
 WORKDIR /src/example
 
-RUN if [ "$RUN_INTEGRATION_TESTS" == "1" ]; then sh test.sh; fi
-
+RUN sh test.sh
 FROM alpine AS final
 ARG AZURE_TENANT_ID 
 ARG AZURE_CLIENT_ID 

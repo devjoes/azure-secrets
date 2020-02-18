@@ -1,5 +1,10 @@
 #!/bin/sh
 
+if [ "$RUN_INTEGRATION_TESTS" != "1" ]; then
+  echo "Not running integration tests because \$RUN_INTEGRATION_TESTS is '$RUN_INTEGRATION_TESTS'"
+  exit 0
+fi
+
 if [[ -z $AZURE_TENANT_ID ]] || [[ -z $AZURE_CLIENT_ID ]] || [[ -z $AZURE_CLIENT_SECRET ]]; then
     echo "Please set AZURE_TENANT_ID, AZURE_CLIENT_ID and AZURE_CLIENT_SECRET"
     exit 11
@@ -7,6 +12,7 @@ fi
 
 echo az login --service-principal -u "$AZURE_CLIENT_ID" -p "$AZURE_CLIENT_SECRET" --tenant "$AZURE_TENANT_ID"
 az login --service-principal -u "$AZURE_CLIENT_ID" -p "$AZURE_CLIENT_SECRET" --tenant "$AZURE_TENANT_ID" || exit 12
+az account show --sdk-auth
 
 NOW=`date +%s`
 KEYVAULT="kustazsecrets-$NOW"

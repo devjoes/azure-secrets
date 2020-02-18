@@ -12,6 +12,8 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/profiles/latest/keyvault/keyvault"
 	kvauth "github.com/Azure/azure-sdk-for-go/services/keyvault/auth"
+	"github.com/Azure/go-autorest/autorest"
+	"github.com/Azure/go-autorest/autorest/azure"
 
 	"github.com/pkg/errors"
 	"sigs.k8s.io/kustomize/api/ifc"
@@ -24,6 +26,7 @@ import (
 const azureTenantID = "AZURE_TENANT_ID"
 const azureClientID = "AZURE_CLIENT_ID"
 const azureClientSecret = "AZURE_CLIENT_SECRET"
+const azureAuthLocation = "AZURE_AUTH_LOCATION"
 const disableAzureAuthValidation = "DISABLE_AZURE_AUTH_VALIDATION"
 
 type innerSecret struct {
@@ -227,11 +230,26 @@ func getKvClient(vaultName string) (iKvClient, error) {
 		return testClient{}, nil
 	}
 
-	if os.Getenv(azureTenantID) == "" || os.Getenv(azureClientID) == "" || os.Getenv(azureClientSecret) == "" || os.Getenv(disableAzureAuthValidation) != "" {
-		return nil, errors.New(fmt.Sprintf("The environment variables: %s, %s, %s should be set. Or set %s.", azureTenantID, azureTenantID, azureTenantID, disableAzureAuthValidation))
+	authFile := os.Getenv(azureAuthLocation)
+	if authFile == "" {
+		if os.Getenv(azureTenantID) == "" || os.Getenv(azureClientID) == "" || os.Getenv(azureClientSecret) == "" || os.Getenv(disableAzureAuthValidation) != "" {
+			return nil, errors.New(fmt.Sprintf("The environment variables: %s, %s, %s should be set. Or set %s.", azureTenantID, azureTenantID, azureTenantID, disableAzureAuthValidation))
+		}
+	} else {
+		if _, err := os.Stat(authFile); os.IsNotExist(err) {
+			return nil, errors.New(fmt.Sprintf("%s does not exist", authFile))
+		}
 	}
 
-	authorizer, err := kvauth.NewAuthorizerFromEnvironment()
+	var authorizer autorest.Authorizer
+	var err error
+	if authFile == "" {
+		authorizer, err = kvauth.NewAuthorizerFromEnvironment()
+		fmt.Printf("Using env based auth: %s\n", os.Getenv(azureClientID))
+	} else {
+		authorizer, err = kvauth.NewAuthorizerFromFile(azure.PublicCloud.ResourceManagerEndpoint)
+		fmt.Printf("Using file based auth: %s\n", authFile)
+	}
 	if err != nil {
 		return nil, errors.Wrap(err, "unable to create vault authorizer")
 	}
@@ -253,17 +271,32 @@ type azKvClient struct {
 }
 
 func (kvc azKvClient) getSecret(name string) (*string, error) {
-	res, err := kvc.client.GetSecret(context.Background(), "https://"+kvc.vaultName+".vault.azure.net", name, "")
-	if err != nil {
-		return nil, errors.Wrapf(err, "Error getting secret '%s' from vault '%s'", name, kvc.vaultName)
-	}
+	done := false
+	attempts := 0
+	var err error
+	var res keyvault.SecretBundle
 	defer func() {
 		if recoveredErr := recover(); err != nil {
 			err = errors.Errorf("Error getting secret '%s' from vault '%s' %v", name, kvc.vaultName, recoveredErr)
 			fmt.Println(err)
 		}
 	}()
-	return res.Value, err
+	// Azure keyvault seems to randomly throw 401s at us which we have to ignore and just try again
+	for !done {
+		res, err = kvc.client.GetSecret(context.Background(), "https://"+kvc.vaultName+".vault.azure.net", name, "")
+		done = err == nil || attempts > 5
+		if err != nil {
+			fmt.Printf("error %s on attempt %d\n", err.Error(), attempts)
+			if !strings.Contains(err.Error(), "401") {
+				// done = true
+			}
+		}
+		attempts++
+	}
+	if err != nil {
+		return nil, errors.Wrapf(err, "Error getting secret '%s' from vault '%s'", name, kvc.vaultName)
+	}
+	return res.Value, nil
 }
 
 // Kustomize plugins don't seem to support DI'ing mocks :(

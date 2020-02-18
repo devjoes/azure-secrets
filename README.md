@@ -2,16 +2,6 @@
 
 This Kustomize plugin reads secrets from an Azure Key Vault and outputs them as YAML.
 
-## Authentication
-
-You have to handle how the plugin authenticates with Azure, you can do this by setting the following environment variables:
-
-* AZURE_TENANT_ID - The tenant ID where your keyvault resides.
-* AZURE_CLIENT_ID - The client ID of a service principal with Read access to the vault.
-* AZURE_CLIENT_SECRET - The client secret of the service principal with Read access to the vault.
-
-Or if you do not want to use a service principle then you can set DISABLE_AZURE_AUTH_VALIDATION to a non-empty value. This will assume that you have authenticated some other way (like MSI).
-
 ## Usage
 
 You can declare the plugin like this:
@@ -52,3 +42,21 @@ There is a Docker image [here](https://hub.docker.com/r/joeshearn/azure-secrets)
     FROM alpine:latest
     COPY --from=joeshearn/azure-secrets /bin/kustomize /bin/kustomize
     COPY --from=joeshearn/azure-secrets /root/.config/kustomize/plugin/devjoes/v1/azuresecrets/AzureSecrets.so /root/.config/kustomize/plugin/devjoes/v1/azuresecrets/AzureSecrets.so
+
+
+## Authentication
+
+You have to handle how the plugin authenticates with Azure, you can do this by setting the following environment variables:
+
+* AZURE_TENANT_ID - The tenant ID where your keyvault resides.
+* AZURE_CLIENT_ID - The client ID of a service principal with Read access to the vault.
+* AZURE_CLIENT_SECRET - The client secret of the service principal with Read access to the vault.
+* AZURE_AUTH_LOCATION - This is an alternative to the above settings - see [here for more info](https://docs.microsoft.com/en-us/azure/go/azure-sdk-go-authorization).
+* DISABLE_AZURE_AUTH_VALIDATION - This bypasses all of the above options and assumes that you are handeling authentication yourself.
+
+### Caveats
+
+There seem to be (https://github.com/Azure/go-autorest/issues/290)[issues with go-autorest] these would be fixed by upgrading to a later version of go-autorest, but as a plugin we are constrained by Kustomize's dependencies.
+* Ideally you should be able to authenticate using a service principal's client ID and secret. However I have seen issus with this when running from CI.
+* Running from CI I have had a bit more success using AZURE_AUTH_LOCATION (it eventually worked after multiple retries)
+* In the end I ended up using an [alpine image with the Azure CLI](https://hub.docker.com/r/joeshearn/az-cli), running az login to log in with the service principal and then bypassing authentication using DISABLE_AZURE_AUTH_VALIDATION
