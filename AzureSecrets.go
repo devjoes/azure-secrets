@@ -28,6 +28,7 @@ const azureClientID = "AZURE_CLIENT_ID"
 const azureClientSecret = "AZURE_CLIENT_SECRET"
 const azureAuthLocation = "AZURE_AUTH_LOCATION"
 const disableAzureAuthValidation = "DISABLE_AZURE_AUTH_VALIDATION"
+const offlineTestingMode = "AZURE_SECRETS_OFFLINE_TESTING_MODE"
 
 type innerSecret struct {
 	Name         string   `json:"name,omitempty" yaml:"name,omitempty"`
@@ -225,6 +226,9 @@ func (p *plugin) debug(format string, a ...interface{}) {
 }
 
 func getKvClient(vaultName string) (iKvClient, error) {
+	if os.Getenv(offlineTestingMode) != "" {
+		return randomSecretClient{warnedUser: false}, nil
+	}
 	// Kustomize plugins don't seem to support DI'ing mocks :(
 	if vaultName == "__TESTING_AZURESECRETS__" {
 		return testClient{}, nil
@@ -297,6 +301,39 @@ func (kvc azKvClient) getSecret(name string) (*string, error) {
 		return nil, errors.Wrapf(err, "Error getting secret '%s' from vault '%s'", name, kvc.vaultName)
 	}
 	return res.Value, nil
+}
+
+var rnd = rand.New(rand.NewSource(time.Now().UnixNano()))
+
+type randomSecretClient struct {
+	warnedUser bool
+}
+
+func (kvc randomSecretClient) warnUser() {
+	if kvc.warnedUser {
+		return
+	}
+	const red = "\033[1;31m"
+	const noColour = "\033[0m"
+	fmt.Printf("\n\n")
+	fmt.Printf("%s#########################################%s\n", red, noColour)
+	fmt.Printf("%s#                                       #%s\n", red, noColour)
+	fmt.Printf("%s#             AZURE SECRETS             #%s\n", red, noColour)
+	fmt.Printf("%s#       IS IN OFFLINE TESTING MODE      #%s\n", red, noColour)
+	fmt.Printf("%s#        RETURNING RANDOM STRINGS       #%s\n", red, noColour)
+	fmt.Printf("%s#        INSTEAD OF REAL SECRETS!       #%s\n", red, noColour)
+	fmt.Printf("%s#                                       #%s\n", red, noColour)
+	fmt.Printf("%s#########################################%s\n", red, noColour)
+	time.Sleep(time.Second * 5)
+	kvc.warnedUser = true
+}
+
+func (kvc randomSecretClient) getSecret(_ string) (*string, error) {
+	kvc.warnUser()
+	var rndBytes = make([]byte, 32)
+	rnd.Read(rndBytes)
+	secret := base64.RawStdEncoding.EncodeToString(rndBytes)
+	return &secret, nil
 }
 
 // Kustomize plugins don't seem to support DI'ing mocks :(
