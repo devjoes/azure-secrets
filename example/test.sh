@@ -5,6 +5,11 @@ if [ "$RUN_INTEGRATION_TESTS" != "1" ]; then
   exit 0
 fi
 
+echo "Testing offline mode"
+export AZURE_SECRETS_OFFLINE_TESTING_MODE=1
+kustomize build . --enable_alpha_plugins || exit 1
+export AZURE_SECRETS_OFFLINE_TESTING_MODE=
+
 if [[ -z $AZURE_TENANT_ID ]] || [[ -z $AZURE_CLIENT_ID ]] || [[ -z $AZURE_CLIENT_SECRET ]]; then
     echo "Please set AZURE_TENANT_ID, AZURE_CLIENT_ID and AZURE_CLIENT_SECRET"
     exit 11

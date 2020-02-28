@@ -60,3 +60,7 @@ There seem to be (https://github.com/Azure/go-autorest/issues/290)[issues with g
 * Ideally you should be able to authenticate using a service principal's client ID and secret. However I have seen issus with this when running from CI.
 * Running from CI I have had a bit more success using AZURE_AUTH_LOCATION (it eventually worked after multiple retries)
 * In the end I ended up using an [alpine image with the Azure CLI](https://hub.docker.com/r/joeshearn/az-cli), running az login to log in with the service principal and then bypassing authentication using DISABLE_AZURE_AUTH_VALIDATION
+
+### Local testing
+
+When running locally you can set the environmnet variable AZURE_SECRETS_OFFLINE_TESTING_MODE. This will make the plugin return random strings as secrets. This allows you to test your kustomize configuration without distributing the secrets required to access actual secrets.

@@ -1,23 +1,20 @@
 package main_test
 
 import (
+	"bytes"
 	"encoding/base64"
+	"os"
 	"regexp"
 	"sort"
 	"testing"
-//	"time"
+	"time"
+
 	kusttest_test "sigs.k8s.io/kustomize/api/testutils/kusttest"
 )
 
 var fooSecret string = base64.StdEncoding.EncodeToString([]byte("Secret value for FOO"))
 var barSecret string = base64.StdEncoding.EncodeToString([]byte("Secret value for BAR"))
-
-func TestAzureSecrets(t *testing.T) {
-	th := kusttest_test.MakeEnhancedHarness(t).
-		BuildGoPlugin("devjoes", "v1", "AzureSecrets")
-
-	result := th.LoadAndRunGenerator(
-		`apiVersion: devjoes/v1
+var simpleTestInput string = `apiVersion: devjoes/v1
 kind: AzureSecrets
 metadata:
   name: default-name
@@ -36,7 +33,13 @@ secrets:
 - namespace: test-ns
   keys:
   - FOOKey=FOO
-  - BARKey=BAR`)
+  - BARKey=BAR`
+
+func TestAzureSecrets(t *testing.T) {
+	th := kusttest_test.MakeEnhancedHarness(t).
+		BuildGoPlugin("devjoes", "v1", "AzureSecrets")
+
+	result := th.LoadAndRunGenerator(simpleTestInput)
 	th.AssertActualEqualsExpected(result, `apiVersion: v1
 data:
   BARKey: `+barSecret+`
@@ -128,6 +131,33 @@ secrets:
 	if len(secrets) == 1 || secrets[0] != secrets[len(secrets)-1] {
 		t.Errorf("Found different values for cached secret RND %v", secrets)
 	}
+}
+
+func TestAzureSecrets_OfflineTesting(t *testing.T) {
+	offlineTestingMode := "AZURE_SECRETS_OFFLINE_TESTING_MODE"
+	os.Setenv(offlineTestingMode, "1")
+	start := time.Now()
+	th := kusttest_test.MakeEnhancedHarness(t).
+		BuildGoPlugin("devjoes", "v1", "AzureSecrets")
+	result1 := th.LoadAndRunGenerator(simpleTestInput)
+	result2 := th.LoadAndRunGenerator(simpleTestInput)
+	os.Setenv(offlineTestingMode, "")
+
+	bResult1, err := result1.AsYaml()
+	if err != nil {
+		t.Error(err)
+	}
+	bResult2, err := result2.AsYaml()
+	if err != nil {
+		t.Error(err)
+	}
+	if bytes.Compare(bResult1, bResult2) == 0 {
+		t.Errorf("Returned the same result twice. When %s is set random results should be returned", offlineTestingMode)
+	}
+	if time.Since(start).Seconds() < 10 {
+		t.Errorf("When %s is set the user should be told and the plugin should pause", offlineTestingMode)
+	}
+
 }
 
 // func TestAzureSecrets_RunInParallel(t *testing.T) {
