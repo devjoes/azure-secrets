@@ -170,6 +170,35 @@ func TestAzureSecrets_OfflineTesting(t *testing.T) {
 
 }
 
+func TestAzureSecrets_OutputAsConfigMap(t *testing.T) {
+	th := kusttest_test.MakeEnhancedHarness(t).
+		BuildGoPlugin("devjoes", "v1", "AzureSecrets")
+	result := th.LoadAndRunGenerator(
+		`apiVersion: devjoes/v1
+kind: AzureSecrets
+metadata:
+  name: default-name
+  namespace: default-ns
+vault: __TESTING_AZURESECRETS__
+secrets:
+- name: test-secret1
+  namespace: test-ns
+  outputAsConfigMap: true
+  keys:
+  - FOOKey=RND
+  - BARKey=RND`)
+
+	yamlResult, _ := result.AsYaml()
+
+	if !regexp.MustCompile(`ConfigMap`).Match(yamlResult) {
+		t.Errorf("Could not find Kind: ConfigMap in:\n%s", string(yamlResult))
+	}
+
+	if regexp.MustCompile(`Secret`).Match(yamlResult) {
+		t.Errorf("Found Kind: Secret in:\n%s", string(yamlResult))
+	}
+}
+
 // func TestAzureSecrets_RunInParallel(t *testing.T) {
 // 	// The test implementation takes ~1000ms to get a secret
 // 	th := kusttest_test.MakeEnhancedHarness(t).

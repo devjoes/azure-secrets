@@ -31,10 +31,11 @@ const disableAzureAuthValidation = "DISABLE_AZURE_AUTH_VALIDATION"
 const offlineTestingMode = "AZURE_SECRETS_OFFLINE_TESTING_MODE"
 
 type innerSecret struct {
-	Name         string   `json:"name,omitempty" yaml:"name,omitempty"`
-	Namespace    string   `json:"namespace,omitempty" yaml:"namespace,omitempty"`
-	Keys         []string `json:"keys,omitempty" yaml:"keys,omitempty"`
-	Base64Decode bool     `json:"base64decode,omitempty" yaml:"base64decode,omitempty"`
+	Name              string   `json:"name,omitempty" yaml:"name,omitempty"`
+	Namespace         string   `json:"namespace,omitempty" yaml:"namespace,omitempty"`
+	Keys              []string `json:"keys,omitempty" yaml:"keys,omitempty"`
+	Base64Decode      bool     `json:"base64decode,omitempty" yaml:"base64decode,omitempty"`
+	OutputAsConfigMap bool     `json:"outputAsConfigMap,omitempty" yaml:"outputAsConfigMap,omitempty"`
 }
 
 type plugin struct {
@@ -69,7 +70,7 @@ func (p *plugin) Config(ph *resmap.PluginHelpers, c []byte) (err error) {
 
 func (p *plugin) Generate() (resmap.ResMap, error) {
 	p.debug("Azure Secrets - generate start")
-	resmap := resmap.New()
+	outerResmap := resmap.New()
 	_, err := getKvClient(p.Vault)
 	if err != nil {
 		p.debug("Azure Secrets - generate error")
@@ -88,15 +89,21 @@ func (p *plugin) Generate() (resmap.ResMap, error) {
 	}
 
 	for _, sec := range p.Secrets {
-		innerRmap, err := p.generateSecret(sec, secretValues)
+		var innerResmap resmap.ResMap
+		var err error
+		if sec.OutputAsConfigMap {
+			innerResmap, err = p.outputAsConfigMap(sec, secretValues)
+		} else {
+			innerResmap, err = p.generateSecret(sec, secretValues)
+		}
 		if err != nil {
 			p.debug("Azure Secrets - generate error")
 			return nil, errors.Wrapf(err, "Error generating %v", sec)
 		}
-		resmap.AppendAll(innerRmap)
+		outerResmap.AppendAll(innerResmap)
 	}
 	p.debug("Azure Secrets - generate end")
-	return resmap, nil
+	return outerResmap, nil
 }
 
 func getSecret(valuesChan chan secretValue, name string, vaultName string) {
@@ -183,20 +190,45 @@ func contains(arr []string, str string) bool {
 }
 
 func (p *plugin) generateSecret(secret innerSecret, values map[string]string) (resmap.ResMap, error) {
+	name, namespace, contents, err := p.generateContents(secret, values)
+	if err != nil {
+		return nil, err
+	}
 	args := types.SecretArgs{}
-	args.Name = secret.Name
-	args.Namespace = secret.Namespace
-	if args.Name == "" {
-		args.Name = p.Name
+	args.Name = name
+	args.Namespace = namespace
+	args.LiteralSources = contents
+	return p.factory.FromSecretArgs(p.loader, nil, args)
+}
+
+func (p *plugin) outputAsConfigMap(secret innerSecret, values map[string]string) (resmap.ResMap, error) {
+	name, namespace, contents, err := p.generateContents(secret, values)
+	if err != nil {
+		return nil, err
 	}
-	if args.Namespace == "" {
-		args.Namespace = p.Namespace
+	args := types.ConfigMapArgs{}
+	args.Name = name
+	args.Namespace = namespace
+	args.LiteralSources = contents
+	return p.factory.FromConfigMapArgs(p.loader, nil, args)
+}
+
+func (p *plugin) generateContents(secret innerSecret, values map[string]string) (string, string, []string, error) {
+	name := secret.Name
+	namespace := secret.Namespace
+	var contents []string
+
+	if name == "" {
+		name = p.Name
 	}
-	if args.Name == "" {
-		return nil, errors.Errorf("Secret is missing name: %v", secret)
+	if namespace == "" {
+		namespace = p.Namespace
 	}
-	if args.Namespace == "" {
-		return nil, errors.Errorf("Secret is missing namespace: %v", secret)
+	if name == "" {
+		return "", "", nil, errors.Errorf("Secret is missing name: %v", secret)
+	}
+	if namespace == "" {
+		return "", "", nil, errors.Errorf("Secret is missing namespace: %v", secret)
 	}
 
 	for _, key := range secret.Keys {
@@ -206,17 +238,15 @@ func (p *plugin) generateSecret(secret innerSecret, values map[string]string) (r
 				if secret.Base64Decode {
 					data, err := base64.StdEncoding.DecodeString(v)
 					if err != nil {
-						return nil, errors.Wrapf(err, "Could not base64 decode '%s'", v)
+						return "", "", nil, errors.Wrapf(err, "Could not base64 decode '%s'", v)
 					}
 					v = string(data)
 				}
-				args.LiteralSources = append(
-					args.LiteralSources, kv[0]+"="+v)
+				contents = append(contents, kv[0]+"="+v)
 			}
 		}
 	}
-
-	return p.factory.FromSecretArgs(p.loader, nil, args)
+	return name, namespace, contents, nil
 }
 
 func (p *plugin) debug(format string, a ...interface{}) {
