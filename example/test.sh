@@ -36,6 +36,7 @@ az group create -n "rg-$KEYVAULT" --location "North Europe"
 az keyvault create --name "$KEYVAULT" --resource-group "rg-$KEYVAULT" --location "North Europe"
 az keyvault secret set --vault-name "$KEYVAULT" --name "test-secret1" --value "SEC1 Super secret password!!"
 az keyvault secret set --vault-name "$KEYVAULT" --name "test-secret2" --value "SEC2 A connection string or something? ...Nowhere near as secret as the password :( does have funny chars though!! :? "
+az keyvault secret set --vault-name "$KEYVAULT" --name "test-secret3" --value "c3Nzc3NoaCEgSSdtIGEgYmFzZTY0IGVuY29kZWQgc2VjcmV0"
 sed -i "s/TestKeyVault/$KEYVAULT/g" azure_secrets.yaml
 cat azure_secrets.yaml
 

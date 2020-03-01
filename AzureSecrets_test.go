@@ -6,6 +6,7 @@ import (
 	"os"
 	"regexp"
 	"sort"
+	"strings"
 	"testing"
 	"time"
 
@@ -23,6 +24,7 @@ vault: __TESTING_AZURESECRETS__
 secrets:
 - name: test-secret
   namespace: test-ns
+  base64decode: false
   keys:
   - FOOKey=FOO
   - BARKey=BAR
@@ -156,6 +158,14 @@ func TestAzureSecrets_OfflineTesting(t *testing.T) {
 	}
 	if time.Since(start).Seconds() < 10 {
 		t.Errorf("When %s is set the user should be told and the plugin should pause", offlineTestingMode)
+	}
+
+	os.Setenv(offlineTestingMode, "1")
+	result3 := th.LoadAndRunGenerator(strings.ReplaceAll(simpleTestInput, "base64decode: false", "base64decode: true"))
+	os.Setenv(offlineTestingMode, "")
+	_, err = result3.AsYaml()
+	if err != nil {
+		t.Error(err)
 	}
 
 }
