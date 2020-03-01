@@ -227,7 +227,7 @@ func (p *plugin) debug(format string, a ...interface{}) {
 
 func getKvClient(vaultName string) (iKvClient, error) {
 	if os.Getenv(offlineTestingMode) != "" {
-		return randomSecretClient{warnedUser: false}, nil
+		return randomSecretClient{warnedUser: false, vaultName: vaultName}, nil
 	}
 	// Kustomize plugins don't seem to support DI'ing mocks :(
 	if vaultName == "__TESTING_AZURESECRETS__" {
@@ -307,6 +307,7 @@ var rnd = rand.New(rand.NewSource(time.Now().UnixNano()))
 
 type randomSecretClient struct {
 	warnedUser bool
+	vaultName  string
 }
 
 func (kvc randomSecretClient) warnUser() {
@@ -315,24 +316,27 @@ func (kvc randomSecretClient) warnUser() {
 	}
 	const red = "\033[1;31m"
 	const noColour = "\033[0m"
-	fmt.Printf("\n\n")
-	fmt.Printf("%s#########################################%s\n", red, noColour)
-	fmt.Printf("%s#                                       #%s\n", red, noColour)
-	fmt.Printf("%s#             AZURE SECRETS             #%s\n", red, noColour)
-	fmt.Printf("%s#       IS IN OFFLINE TESTING MODE      #%s\n", red, noColour)
-	fmt.Printf("%s#        RETURNING RANDOM STRINGS       #%s\n", red, noColour)
-	fmt.Printf("%s#        INSTEAD OF REAL SECRETS!       #%s\n", red, noColour)
-	fmt.Printf("%s#                                       #%s\n", red, noColour)
-	fmt.Printf("%s#########################################%s\n", red, noColour)
+	fmt.Fprintf(os.Stderr, "\n%sWarning whilst reading from vault:\n%s%s\n", red, kvc.vaultName, noColour)
+	fmt.Fprintf(os.Stderr, "%s#########################################%s\n", red, noColour)
+	fmt.Fprintf(os.Stderr, "%s#                                       #%s\n", red, noColour)
+	fmt.Fprintf(os.Stderr, "%s#             AZURE SECRETS             #%s\n", red, noColour)
+	fmt.Fprintf(os.Stderr, "%s#       IS IN OFFLINE TESTING MODE      #%s\n", red, noColour)
+	fmt.Fprintf(os.Stderr, "%s#        RETURNING RANDOM STRINGS       #%s\n", red, noColour)
+	fmt.Fprintf(os.Stderr, "%s#        INSTEAD OF REAL SECRETS!       #%s\n", red, noColour)
+	fmt.Fprintf(os.Stderr, "%s#                                       #%s\n", red, noColour)
+	fmt.Fprintf(os.Stderr, "%s#########################################%s\n", red, noColour)
 	time.Sleep(time.Second * 5)
 	kvc.warnedUser = true
 }
 
 func (kvc randomSecretClient) getSecret(_ string) (*string, error) {
 	kvc.warnUser()
+	const charset = "1234567890abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
 	var rndBytes = make([]byte, 32)
-	rnd.Read(rndBytes)
-	secret := base64.RawStdEncoding.EncodeToString(rndBytes)
+	for i := range rndBytes {
+		rndBytes[i] = charset[rnd.Intn(len(charset))]
+	}
+	secret := base64.StdEncoding.EncodeToString(rndBytes)
 	return &secret, nil
 }
 
