@@ -7,6 +7,7 @@ import (
 	"math/rand"
 	"os"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -29,6 +30,7 @@ const azureClientSecret = "AZURE_CLIENT_SECRET"
 const azureAuthLocation = "AZURE_AUTH_LOCATION"
 const disableAzureAuthValidation = "DISABLE_AZURE_AUTH_VALIDATION"
 const offlineTestingMode = "AZURE_SECRETS_OFFLINE_TESTING_MODE"
+const warnForSeconds = "AZURE_SECRETS_WARN_FOR_SECONDS"
 
 type innerSecret struct {
 	Name              string   `json:"name,omitempty" yaml:"name,omitempty"`
@@ -36,6 +38,8 @@ type innerSecret struct {
 	Keys              []string `json:"keys,omitempty" yaml:"keys,omitempty"`
 	Base64Decode      bool     `json:"base64decode,omitempty" yaml:"base64decode,omitempty"`
 	OutputAsConfigMap bool     `json:"outputAsConfigMap,omitempty" yaml:"outputAsConfigMap,omitempty"`
+	Errored           bool
+	Options           *types.GeneratorOptions
 }
 
 type plugin struct {
@@ -44,9 +48,16 @@ type plugin struct {
 	Vault            string        `json:"vault,omitempty" yaml:"vault,omitempty"`
 	Secrets          []innerSecret `json:"secrets,omitempty" yaml:"secrets,omitempty"`
 	Verbose          bool          `json:"verbose,omitempty" yaml:"verbose,omitempty"`
+	OnError          errorOptions  `json:"onError,omitempty" yaml:"onError,omitempty"`
 	async            bool          // This doesn't work
 	factory          *resmap.Factory
 	loader           ifc.KvLoader
+}
+
+type errorOptions struct {
+	Warn          bool                   `json:"warn,omitempty" yaml:"warn,omitempty"`
+	Exclude       bool                   `json:"exclude,omitempty" yaml:"exclude,omitempty"`
+	PatchMetadata types.GeneratorOptions `json:"patchMetadata,omitempty" yaml:"patchMetadata,omitempty"`
 }
 
 type secretValue struct {
@@ -60,6 +71,10 @@ var KustomizePlugin plugin
 func (p *plugin) Config(ph *resmap.PluginHelpers, c []byte) (err error) {
 	p.debug("Azure Secrets - config start")
 	p.Namespace = "default"
+	p.OnError = errorOptions{
+		Warn:          false,
+		PatchMetadata: types.GeneratorOptions{},
+	}
 	p.pluginHelper = ph
 	p.factory = ph.ResmapFactory()
 	p.loader = kv.NewLoader(p.pluginHelper.Loader(), p.pluginHelper.Validator())
@@ -70,13 +85,14 @@ func (p *plugin) Config(ph *resmap.PluginHelpers, c []byte) (err error) {
 
 func (p *plugin) Generate() (resmap.ResMap, error) {
 	p.debug("Azure Secrets - generate start")
-	outerResmap := resmap.New()
+	var outerResmap resmap.ResMap
 	_, err := getKvClient(p.Vault)
 	if err != nil {
 		p.debug("Azure Secrets - generate error")
 		return nil, err
 	}
-
+	var options *types.GeneratorOptions
+	options = nil
 	var secretValues map[string]string
 	if p.async {
 		secretValues, err = p.getSecretValuesAsync()
@@ -85,25 +101,55 @@ func (p *plugin) Generate() (resmap.ResMap, error) {
 	}
 	if err != nil {
 		p.debug("Azure Secrets - generate error %v", err)
-		return nil, err
+
+		if err != nil {
+			p.debug("Azure Secrets - generate error")
+			outerResmap, secretValues, options, err = p.handleError(err)
+			if err != nil {
+				return nil, err
+			}
+			if outerResmap != nil {
+				return outerResmap, nil
+			}
+		}
 	}
 
+	outerResmap = resmap.New()
 	for _, sec := range p.Secrets {
 		var innerResmap resmap.ResMap
 		var err error
 		if sec.OutputAsConfigMap {
-			innerResmap, err = p.outputAsConfigMap(sec, secretValues)
+			innerResmap, err = p.outputAsConfigMap(sec, secretValues, options)
 		} else {
-			innerResmap, err = p.generateSecret(sec, secretValues)
+			innerResmap, err = p.generateSecret(sec, secretValues, options)
 		}
 		if err != nil {
 			p.debug("Azure Secrets - generate error")
-			return nil, errors.Wrapf(err, "Error generating %v", sec)
+			return nil, err
 		}
 		outerResmap.AppendAll(innerResmap)
 	}
 	p.debug("Azure Secrets - generate end")
 	return outerResmap, nil
+}
+
+func (p *plugin) handleError(err error) (resmap.ResMap, map[string]string, *types.GeneratorOptions, error) {
+	yml, _ := yaml.Marshal(p)
+	if !p.OnError.Warn {
+		return nil, nil, nil, errors.Wrapf(err, "Error generating %s %s", yml, p.Name)
+	}
+	fmt.Fprintf(os.Stderr, "AZURESECERTS WARNING: Error '%s' generating secret %s\n", err.Error(), p.Name)
+	if p.OnError.Exclude {
+		return resmap.New(), nil, nil, nil
+	}
+	secNames := p.getUniqueSecretNames()
+	secValues := make(map[string]string, len(secNames))
+	for i := 0; i < len(secNames); i++ {
+		// We add some random character to the end of the value in case it being use to define something like a password
+		// We don't want someone to be able to force a system in to a state where an important password becomes "ERROR"
+		secValues[secNames[i]] = "ERROR_" + string(getRandomChars(32))
+	}
+	return nil, secValues, &p.OnError.PatchMetadata, nil
 }
 
 func getSecret(valuesChan chan secretValue, name string, vaultName string) {
@@ -189,7 +235,7 @@ func contains(arr []string, str string) bool {
 	return false
 }
 
-func (p *plugin) generateSecret(secret innerSecret, values map[string]string) (resmap.ResMap, error) {
+func (p *plugin) generateSecret(secret innerSecret, values map[string]string, options *types.GeneratorOptions) (resmap.ResMap, error) {
 	name, namespace, contents, err := p.generateContents(secret, values)
 	if err != nil {
 		return nil, err
@@ -198,10 +244,10 @@ func (p *plugin) generateSecret(secret innerSecret, values map[string]string) (r
 	args.Name = name
 	args.Namespace = namespace
 	args.LiteralSources = contents
-	return p.factory.FromSecretArgs(p.loader, nil, args)
+	return p.factory.FromSecretArgs(p.loader, options, args)
 }
 
-func (p *plugin) outputAsConfigMap(secret innerSecret, values map[string]string) (resmap.ResMap, error) {
+func (p *plugin) outputAsConfigMap(secret innerSecret, values map[string]string, options *types.GeneratorOptions) (resmap.ResMap, error) {
 	name, namespace, contents, err := p.generateContents(secret, values)
 	if err != nil {
 		return nil, err
@@ -210,7 +256,7 @@ func (p *plugin) outputAsConfigMap(secret innerSecret, values map[string]string)
 	args.Name = name
 	args.Namespace = namespace
 	args.LiteralSources = contents
-	return p.factory.FromConfigMapArgs(p.loader, nil, args)
+	return p.factory.FromConfigMapArgs(p.loader, options, args)
 }
 
 func (p *plugin) generateContents(secret innerSecret, values map[string]string) (string, string, []string, error) {
@@ -335,6 +381,15 @@ func (kvc azKvClient) getSecret(name string) (*string, error) {
 
 var rnd = rand.New(rand.NewSource(time.Now().UnixNano()))
 
+func getRandomChars(count int) []byte {
+	const charset = "1234567890abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
+	var rndBytes = make([]byte, count)
+	for i := range rndBytes {
+		rndBytes[i] = charset[rnd.Intn(len(charset))]
+	}
+	return rndBytes
+}
+
 type randomSecretClient struct {
 	warnedUser bool
 	vaultName  string
@@ -355,18 +410,18 @@ func (kvc randomSecretClient) warnUser() {
 	fmt.Fprintf(os.Stderr, "%s#        INSTEAD OF REAL SECRETS!       #%s\n", red, noColour)
 	fmt.Fprintf(os.Stderr, "%s#                                       #%s\n", red, noColour)
 	fmt.Fprintf(os.Stderr, "%s#########################################%s\n", red, noColour)
-	time.Sleep(time.Second * 5)
+
+	secs, err := strconv.Atoi(os.Getenv(warnForSeconds))
+	if err != nil {
+		secs = 5
+	}
+	time.Sleep(time.Second * time.Duration(secs))
 	kvc.warnedUser = true
 }
 
 func (kvc randomSecretClient) getSecret(_ string) (*string, error) {
 	kvc.warnUser()
-	const charset = "1234567890abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
-	var rndBytes = make([]byte, 32)
-	for i := range rndBytes {
-		rndBytes[i] = charset[rnd.Intn(len(charset))]
-	}
-	secret := base64.StdEncoding.EncodeToString(rndBytes)
+	secret := base64.StdEncoding.EncodeToString(getRandomChars(32))
 	return &secret, nil
 }
 
@@ -376,7 +431,9 @@ type testClient struct {
 
 func (kvc testClient) getSecret(name string) (*string, error) {
 	var val string
-	if name == "RND" {
+	if name == "ERR" {
+		return nil, errors.Errorf("test error")
+	} else if name == "RND" {
 		val = fmt.Sprintf("%d", rand.Int63())
 	} else if strings.HasPrefix(name, "B64") {
 		val = base64.StdEncoding.EncodeToString([]byte(fmt.Sprintf("Secret value for %s", name[3:])))

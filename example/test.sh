@@ -1,5 +1,22 @@
 #!/bin/sh
 
+loginWithSp(){
+  if [[ -z $AZURE_TENANT_ID ]] || [[ -z $AZURE_CLIENT_ID ]] || [[ -z $AZURE_CLIENT_SECRET ]]; then
+      echo "Please set AZURE_TENANT_ID, AZURE_CLIENT_ID and AZURE_CLIENT_SECRET"
+      exit 11
+  fi
+
+  echo az login --service-principal -u "$AZURE_CLIENT_ID" -p "$AZURE_CLIENT_SECRET" --tenant "$AZURE_TENANT_ID"
+  #az login --service-principal -u "$AZURE_CLIENT_ID" -p "$AZURE_CLIENT_SECRET" --tenant "$AZURE_TENANT_ID" || exit 12
+  az account show --sdk-auth
+}
+
+loginNormally() {
+  echo "Press enter to log in"
+  read
+  az login
+}
+
 if [ "$RUN_INTEGRATION_TESTS" != "1" ]; then
   echo "Not running integration tests because \$RUN_INTEGRATION_TESTS is '$RUN_INTEGRATION_TESTS'"
   exit 0
@@ -10,14 +27,12 @@ export AZURE_SECRETS_OFFLINE_TESTING_MODE=1
 kustomize build . --enable_alpha_plugins || exit 1
 export AZURE_SECRETS_OFFLINE_TESTING_MODE=
 
-if [[ -z $AZURE_TENANT_ID ]] || [[ -z $AZURE_CLIENT_ID ]] || [[ -z $AZURE_CLIENT_SECRET ]]; then
-    echo "Please set AZURE_TENANT_ID, AZURE_CLIENT_ID and AZURE_CLIENT_SECRET"
-    exit 11
+if [ "$DISABLE_AZURE_AUTH_VALIDATION" == "1" ]; then
+  loginNormally
+else
+  loginWithSp
 fi
 
-echo az login --service-principal -u "$AZURE_CLIENT_ID" -p "$AZURE_CLIENT_SECRET" --tenant "$AZURE_TENANT_ID"
-az login --service-principal -u "$AZURE_CLIENT_ID" -p "$AZURE_CLIENT_SECRET" --tenant "$AZURE_TENANT_ID" || exit 12
-az account show --sdk-auth
 
 NOW=`date +%s`
 KEYVAULT="kustazsecrets-$NOW"
