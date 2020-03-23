@@ -149,7 +149,7 @@ func TestAzureSecrets_OfflineTestingCustomDelay(t *testing.T) {
 
 func testAzureSecrets_OfflineTesting(t *testing.T, pauseForSecs string, minDuration float64, maxDuration float64) {
 	offlineTestingMode := "AZURE_SECRETS_OFFLINE_TESTING_MODE"
-	warnForSeconds := "AZURE_SECRETS_WARN_FOR_SECONDS"
+	warnForSeconds := "AZURE_SECRETS_OFFLINE_TESTING_MODE_WARN_SECONDS"
 	os.Setenv(offlineTestingMode, "1")
 	os.Setenv(warnForSeconds, pauseForSecs)
 	start := time.Now()

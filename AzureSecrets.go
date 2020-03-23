@@ -30,7 +30,7 @@ const azureClientSecret = "AZURE_CLIENT_SECRET"
 const azureAuthLocation = "AZURE_AUTH_LOCATION"
 const disableAzureAuthValidation = "DISABLE_AZURE_AUTH_VALIDATION"
 const offlineTestingMode = "AZURE_SECRETS_OFFLINE_TESTING_MODE"
-const warnForSeconds = "AZURE_SECRETS_WARN_FOR_SECONDS"
+const warnForSeconds = "AZURE_SECRETS_OFFLINE_TESTING_MODE_WARN_SECONDS"
 
 type innerSecret struct {
 	Name              string   `json:"name,omitempty" yaml:"name,omitempty"`
@@ -311,13 +311,15 @@ func getKvClient(vaultName string) (iKvClient, error) {
 	}
 
 	authFile := os.Getenv(azureAuthLocation)
-	if authFile == "" {
-		if os.Getenv(azureTenantID) == "" || os.Getenv(azureClientID) == "" || os.Getenv(azureClientSecret) == "" || os.Getenv(disableAzureAuthValidation) != "" {
-			return nil, errors.New(fmt.Sprintf("The environment variables: %s, %s, %s should be set. Or set %s.", azureTenantID, azureTenantID, azureTenantID, disableAzureAuthValidation))
-		}
-	} else {
-		if _, err := os.Stat(authFile); os.IsNotExist(err) {
-			return nil, errors.New(fmt.Sprintf("%s does not exist", authFile))
+	if os.Getenv(disableAzureAuthValidation) == "" {
+		if authFile == "" {
+			if os.Getenv(azureTenantID) == "" || os.Getenv(azureClientID) == "" || os.Getenv(azureClientSecret) == "" {
+				return nil, errors.New(fmt.Sprintf("The environment variables: %s, %s, %s should be set. Or set %s.", azureTenantID, azureTenantID, azureTenantID, disableAzureAuthValidation))
+			}
+		} else {
+			if _, err := os.Stat(authFile); os.IsNotExist(err) {
+				return nil, errors.New(fmt.Sprintf("%s does not exist", authFile))
+			}
 		}
 	}
 
