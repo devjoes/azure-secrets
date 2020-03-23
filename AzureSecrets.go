@@ -147,7 +147,7 @@ func (p *plugin) handleError(err error) (resmap.ResMap, map[string]string, *type
 	for i := 0; i < len(secNames); i++ {
 		// We add some random character to the end of the value in case it being use to define something like a password
 		// We don't want someone to be able to force a system in to a state where an important password becomes "ERROR"
-		secValues[secNames[i]] = "ERROR_" + string(getRandomChars(32))
+		secValues[secNames[i]] = base64.StdEncoding.EncodeToString([]byte("ERROR_" + string(getRandomChars(32))))
 	}
 	return nil, secValues, &p.OnError.PatchMetadata, nil
 }
@@ -314,7 +314,7 @@ func getKvClient(vaultName string) (iKvClient, error) {
 	if os.Getenv(disableAzureAuthValidation) == "" {
 		if authFile == "" {
 			if os.Getenv(azureTenantID) == "" || os.Getenv(azureClientID) == "" || os.Getenv(azureClientSecret) == "" {
-				return nil, errors.New(fmt.Sprintf("The environment variables: %s, %s, %s should be set. Or set %s.", azureTenantID, azureTenantID, azureTenantID, disableAzureAuthValidation))
+				return nil, errors.New(fmt.Sprintf("The environment variables: %s, %s, %s should be set. Or set %s to bypass this check.", azureTenantID, azureClientID, azureClientSecret, disableAzureAuthValidation))
 			}
 		} else {
 			if _, err := os.Stat(authFile); os.IsNotExist(err) {
