@@ -36,6 +36,26 @@ This will result in two secrets and one configmap being generated in the test-ns
 
 If the name or namespace of a secret is unset then it will default to the name/namespace of the parent AzureSecrets. See the Dockerfile for more examples.
 
+If a secret cannot be read then the plugin will fail. There are certain scenarios where you do not want an entire deployment to fail. For instance when you are using a GitOps model and are building the YAML for an entire multitenanted cluster. You do not what the entire deployment process to fail because one team deleted a secret from a key vault. The onError lets you handle this.
+
+    apiVersion: devjoes/v1
+    kind: AzureSecrets
+      onError:
+         warn: true
+         exclude: false
+         patchMetadata:
+           annotations:
+             fluxcd.io/ignore: "true"
+           labels:
+             secretStatus: invalid
+
+* If warn is true then it will print a warning to STDERR, if it is false then the plugin will fail.
+* If exclude is true then no secret will be output
+* If present patchMetadata allows you to set the [GeneratorOptions](https://github.com/kubernetes-sigs/kustomize/blob/master/examples/generatorOptions.md) which can be used to change the metadata of the secret. 
+
+If exclude it not set then a secret will still be output. The secret's keys will be set to "ERROR" and then some random characters. This is to prevent an attacker from causing an issue and forcing a password to become "ERROR".
+
+
 ## Installation
 
 This has been tested with Kustomize 3.5.4 (see docker file)
