@@ -1,4 +1,4 @@
-FROM golang:alpine AS deps
+FROM golang AS deps
 ARG RUN_INTEGRATION_TESTS=0
 #  docker.exe build . --build-arg RUN_INTEGRATION_TESTS=1 --build-arg LOGIN_MANUALY="1" \
 # --build-arg  AZURE_SUB_ID="00000000-0000-0000-0000-000000000000"
@@ -9,11 +9,11 @@ ENV GO111MODULE=on \
     CGO_ENABLED=1
 
 RUN mkdir -p /root/.config/kustomize/plugin/devjoes/v1/azuresecrets/ \
-    && apk add --no-cache curl tar openssl sudo bash jq \
-    && apk --update --no-cache add postgresql-client postgresql \
-    && apk add py-pip \
-    && apk add --virtual=build gcc libffi-dev musl-dev openssl-dev python-dev make \
-    && pip --no-cache-dir install azure-cli==2.0.81 \
+    && apt update && apt install curl tar openssl sudo bash jq -y \
+    && apt install postgresql-client postgresql -y \
+    && apt install python3-pip -y \
+    && apt install gcc libffi-dev musl-dev libssl-dev python3-dev make -y \
+    && pip3 --no-cache-dir install azure-cli==2.0.81 \
     && go get sigs.k8s.io/kustomize/kustomize/v3@v3.5.4
 
 FROM deps AS build
