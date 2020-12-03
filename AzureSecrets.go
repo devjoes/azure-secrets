@@ -153,11 +153,11 @@ func (p *plugin) handleError(err error) (resmap.ResMap, map[string]string, *type
 }
 
 func getSecret(valuesChan chan secretValue, name string, vaultName string) {
-	fmt.Printf("Getting secret '%s' in vault %v\n", name, vaultName)
+	fmt.Fprintf(os.Stderr, "Getting secret '%s' in vault %v\n", name, vaultName)
 	kvClient, err := getKvClient(vaultName)
 	defer func() {
 		if err := recover(); err != nil {
-			fmt.Println(err)
+			fmt.Fprintf(os.Stderr, "%v", err)
 			valuesChan <- secretValue{name, "", errors.Errorf("%v", err)}
 		}
 	}()
@@ -297,7 +297,7 @@ func (p *plugin) generateContents(secret innerSecret, values map[string]string) 
 
 func (p *plugin) debug(format string, a ...interface{}) {
 	if p.Verbose {
-		fmt.Printf("Azure Secrets - "+format+"\n", a)
+		fmt.Fprintf(os.Stderr, "Azure Secrets - "+format+"\n", a)
 	}
 }
 
@@ -327,10 +327,10 @@ func getKvClient(vaultName string) (iKvClient, error) {
 	var err error
 	if authFile == "" {
 		authorizer, err = kvauth.NewAuthorizerFromEnvironment()
-		fmt.Printf("Using env based auth: %s\n", os.Getenv(azureClientID))
+		fmt.Fprintf(os.Stderr, "Using env based auth: %s\n", os.Getenv(azureClientID))
 	} else {
 		authorizer, err = kvauth.NewAuthorizerFromFile(azure.PublicCloud.ResourceManagerEndpoint)
-		fmt.Printf("Using file based auth: %s\n", authFile)
+		fmt.Fprintf(os.Stderr, "Using file based auth: %s\n", authFile)
 	}
 	if err != nil {
 		return nil, errors.Wrap(err, "unable to create vault authorizer")
@@ -360,7 +360,7 @@ func (kvc azKvClient) getSecret(name string) (*string, error) {
 	defer func() {
 		if recoveredErr := recover(); err != nil {
 			err = errors.Errorf("Error getting secret '%s' from vault '%s' %v", name, kvc.vaultName, recoveredErr)
-			fmt.Println(err)
+			fmt.Fprintf(os.Stderr, "%v", err)
 		}
 	}()
 	// Azure keyvault seems to randomly throw 401s at us which we have to ignore and just try again
@@ -368,7 +368,7 @@ func (kvc azKvClient) getSecret(name string) (*string, error) {
 		res, err = kvc.client.GetSecret(context.Background(), "https://"+kvc.vaultName+".vault.azure.net", name, "")
 		done = err == nil || attempts > 5
 		if err != nil {
-			fmt.Printf("error %s on attempt %d\n", err.Error(), attempts)
+			fmt.Fprintf(os.Stderr, "error %s on attempt %d\n", err.Error(), attempts)
 			if !strings.Contains(err.Error(), "401") {
 				// done = true
 			}
