@@ -19,15 +19,21 @@ jobs:
     steps:
       # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
       - uses: actions/checkout@v2
-      - run:  export TAGNAME=$(jq --raw-output .ref "$GITHUB_EVENT_PATH"); echo "TAGNAME=$TAGNAME" >> $GITHUB_ENV
+      - name: Extract tag name
+        id: tag
+        uses: actions/github-script@0.2.0
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            return context.payload.ref.replace(/\/refs\/tags\//, '');
       - run: echo $FOO
         env:
-          FOO: ${{ env.TAGNAME }}
+          FOO: ${{ steps.tag.outputs.result }}
       - name: Build and push Docker image
         uses: docker/build-push-action@v2.2.1
         with:
           context: .
-          tags: joeshearn/azure-secrets:${{env.TAGNAME}},joeshearn/azure-secrets:latest
+          tags: joeshearn/azure-secrets:${{ steps.tag.outputs.result }},joeshearn/azure-secrets:latest
           push: false
       - name: Login
         uses: docker/login-action@v1.6.0
