@@ -20,6 +20,9 @@ jobs:
       # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
       - uses: actions/checkout@v2
       - run:  export TAGNAME=$(jq --raw-output .ref "$GITHUB_EVENT_PATH"); echo "TAGNAME=$TAGNAME" >> $GITHUB_ENV
+      - run: echo $FOO
+        env:
+          FOO: ${{ env.TAGNAME }}
       - name: Build and push Docker image
         uses: docker/build-push-action@v2.2.1
         with:
