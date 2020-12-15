@@ -25,7 +25,9 @@ jobs:
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
-            return context.payload.ref.replace(/\/?refs\/tags\//, '').replace(/\/?refs\/heads\//, '').replace(/"/g,'');
+            const tag = context.payload.ref.replace(/\/?refs\/tags\//, '').replace(/\/?refs\/heads\//, '').replace(/"/g,'');
+            console.log(tag);
+            return tag;
       - run: echo "a${FOO}b"
         env:
           FOO: ${{ steps.tag.outputs.result }}
