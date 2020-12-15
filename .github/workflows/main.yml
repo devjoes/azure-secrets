@@ -29,14 +29,16 @@ jobs:
       - run: echo $FOO
         env:
           FOO: ${{ steps.tag.outputs.result }}
+  
+      - name: Login
+        uses: docker/login-action@v1.6.0
+        with:
+          username: joeshearn
+          password: ${{ secrets.dockerhub_pass }}
+
       - name: Build and push Docker image
         uses: docker/build-push-action@v2.2.1
         with:
           context: .
           tags: joeshearn/azure-secrets:${{ steps.tag.outputs.result }},joeshearn/azure-secrets:latest
           push: false
-      - name: Login
-        uses: docker/login-action@v1.6.0
-        with:
-          username: joeshearn
-          password: ${{ secrets.dockerhub_pass }}
