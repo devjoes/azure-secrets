@@ -7,7 +7,6 @@ on:
   # Triggers the workflow on push or pull request events but only for the master branch
   push:
     tags: ['*']
-    branches: [ temp ]
 # A workflow run is made up of one or more jobs that can run sequentially or in parallel
 jobs:
   # This workflow contains a single job called "build"
@@ -40,4 +39,4 @@ jobs:
         with:
           context: .
           tags: joeshearn/azure-secrets:${{ env.TAG }},joeshearn/azure-secrets:latest
-          push: false
+          push: true
